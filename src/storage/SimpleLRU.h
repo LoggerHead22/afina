@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <iostream>
 
 #include <afina/Storage.h>
 
@@ -16,20 +17,16 @@ namespace Backend {
  * That is NOT thread safe implementaiton!!
  */
 class SimpleLRU : public Afina::Storage {
-    // LRU cache node
-    using lru_node = struct lru_node {
-        const std::string key;
-        std::string value;
-        lru_node* prev;
-        std::unique_ptr<lru_node> next;
-    };
 
 public:
     SimpleLRU(size_t max_size = 1024) : _max_size(max_size) {}
 
     ~SimpleLRU() {
         _lru_index.clear();
-        _lru_head.reset(); // TODO: Here is stack overflow
+        //_lru_head.reset(); // TODO: Here is stack overflow
+        while(_lru_head.get() != nullptr){
+            Delete_node(*_lru_head.get());
+        }
     }
 
     // Implements Afina::Storage interface
@@ -47,11 +44,16 @@ public:
     // Implements Afina::Storage interface
     bool Get(const std::string &key, std::string &value) override;
 
-    void Delete_node(lru_node& node);
-
-    void Add_node(const std::string &key, const std::string &value);
 
 private:
+
+    // LRU cache node
+    using lru_node = struct lru_node {
+        const std::string key;
+        std::string value;
+        lru_node* prev;
+        std::unique_ptr<lru_node> next;
+    };
 
     // Maximum number of bytes could be stored in this cache.
     // i.e all (keys+values) must be not greater than the _max_size
@@ -61,11 +63,19 @@ private:
     // element that wasn't used for longest time.
     //
     // List owns all nodes
-    std::unique_ptr<lru_node> _lru_head;
-    lru_node* _lru_tail;
+    std::unique_ptr<lru_node> _lru_head= std::unique_ptr<lru_node>(nullptr);
+    lru_node* _lru_tail = nullptr;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
     std::map<std::reference_wrapper<const std::string>, std::reference_wrapper<lru_node>, std::less<std::string>> _lru_index;
+
+private:
+
+    //Delete node from list
+    void Delete_node(lru_node& node);
+    //Adds node to head(tail) of list
+    void Add_node(const std::string &key, const std::string &value);
+
 };
 
 } // namespace Backend
