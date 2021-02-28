@@ -130,6 +130,7 @@ void SimpleLRU::Add_node(const std::string &key, const std::string &value){
 
 // See MapBasedGlobalLockImpl.h
 bool SimpleLRU::Get(const std::string &key, std::string &value) {
+    //std::this_thread::sleep_for(std::chrono::milliseconds(10000));
 
     auto node_it = _lru_index.find(cref(key));
     if(node_it == _lru_index.end()){
