@@ -95,7 +95,7 @@ void ServerImpl::Join() {
     close(_server_socket);
     {
        std::unique_lock<std::mutex> __lock(join_mutex);
-       join_cv.wait(__lock, [this]{return this->_client_sockets.empty();});
+       join_cv.wait(__lock, [this]{return this->_client_sockets.empty() && !running;});
     }
 }
 
@@ -149,7 +149,6 @@ void ServerImpl::OnRun() {
                 t.detach();
             }
         }
-
     }
 
     // Cleanup on exit...
