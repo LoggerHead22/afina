@@ -52,14 +52,12 @@ bool SimpleLRU::Set(const std::string &key, const std::string &value) {
     }
 
     lru_node& node = node_it->second.get();
-    _lru_index.erase(node_it);
 
     if(_using_size - node.value.size() + value.size() > _max_size){//если новое значение не влезет
         return false;
     }
-
-    Delete_node(node);
-    Add_node(key, value);
+    node.value = value;
+    PushNodeToTail(node);
 
     return true;
 }
@@ -130,7 +128,11 @@ void SimpleLRU::Add_node(const std::string &key, const std::string &value){
 
 // See MapBasedGlobalLockImpl.h
 bool SimpleLRU::Get(const std::string &key, std::string &value) {
+<<<<<<< HEAD
     //std::this_thread::sleep_for(std::chrono::milliseconds(10000));
+=======
+//    std::this_thread::sleep_for(std::chrono::milliseconds(10000));
+>>>>>>> ef239be... hw1 updated
 
     auto node_it = _lru_index.find(cref(key));
     if(node_it == _lru_index.end()){
@@ -139,6 +141,11 @@ bool SimpleLRU::Get(const std::string &key, std::string &value) {
 
     lru_node& node = node_it->second.get();
     value = node.value;
+    PushNodeToTail(node);
+    return true;
+}
+
+void SimpleLRU::PushNodeToTail(lru_node& node){
     if(_lru_tail != &node){
         if(node.prev != nullptr){
             _lru_tail->next = std::move(node.prev->next);
@@ -153,7 +160,6 @@ bool SimpleLRU::Get(const std::string &key, std::string &value) {
         _lru_tail = &node;
         _lru_tail->next.reset(nullptr);
     }
-    return true;
 }
 
 } // namespace Backend
