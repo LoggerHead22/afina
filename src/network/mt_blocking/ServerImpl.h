@@ -3,6 +3,11 @@
 
 #include <atomic>
 #include <thread>
+#include <mutex>
+#include <memory>
+#include <condition_variable>
+#include <algorithm>
+#include <set>
 
 #include <afina/network/Server.h>
 
@@ -38,6 +43,7 @@ protected:
      */
     void OnRun();
 
+    void ProcessConnection(int client_socket);
 private:
     // Logger instance
     std::shared_ptr<spdlog::logger> _logger;
@@ -47,11 +53,19 @@ private:
     // bounds
     std::atomic<bool> running;
 
+    size_t _limit = 3, current_user_count = 0;
+
+    std::set<int> _open_sockets;
+
     // Server socket to accept connections on
     int _server_socket;
 
     // Thread to run network on
     std::thread _thread;
+
+    //mutex, cv
+    std::mutex mutex;
+    std::condition_variable join_cv;
 };
 
 } // namespace MTblocking
