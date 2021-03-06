@@ -73,7 +73,14 @@ void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
     }
 
     running.store(true);
+
+    {
+        std::unique_lock<std::mutex> __lock(mutex);
+        _open_sockets.insert(_server_socket);
+    }
+
     _thread = std::thread(&ServerImpl::OnRun, this);
+    _thread.detach();
 }
 
 // See Server.h
@@ -82,7 +89,7 @@ void ServerImpl::Stop() {
     shutdown(_server_socket, SHUT_RDWR);
     {
         std::unique_lock<std::mutex> __lock(mutex);
-        for(int client_socket: _client_sockets){
+        for(int client_socket: _open_sockets){
             shutdown(client_socket, SHUT_RD);
         }
     }
@@ -90,16 +97,10 @@ void ServerImpl::Stop() {
 
 // See Server.h
 void ServerImpl::Join() {
-    assert(_thread.joinable());
+    //assert(_thread.joinable());
     {
        std::unique_lock<std::mutex> __lock(mutex);
-       if(join_flag == false){
-           _thread.join();
-           close(_server_socket);
-           join_flag = true;
-       }
-
-       join_cv.wait(__lock, [this]{return this->_client_sockets.empty() && !running;});
+       join_cv.wait(__lock, [this]{return this->_open_sockets.empty() && !running;});
     }
 }
 
@@ -143,11 +144,11 @@ void ServerImpl::OnRun() {
             std::unique_lock<std::mutex> __lock(mutex);
 
             // TODO: Start new thread and process data from/to connection
-            if(_client_sockets.size() == _limit || !running){
+            if(_open_sockets.size() == _limit || !running){
                 close(client_socket);
                 continue;
             }else{
-                _client_sockets.push_back(client_socket);
+                _open_sockets.insert(client_socket);
                 //_working_threads.push_back(std::thread(&ServerImpl::ProcessConnection, this, client_socket));
                 auto t = std::thread(&ServerImpl::ProcessConnection, this, client_socket);
                 t.detach();
@@ -157,6 +158,16 @@ void ServerImpl::OnRun() {
 
     // Cleanup on exit...
     _logger->warn("Network stopped");
+
+    close(_server_socket);
+    {
+        std::unique_lock<std::mutex> __lock(mutex);
+        _open_sockets.erase(_server_socket);
+
+        if(_open_sockets.empty() && !running){
+            join_cv.notify_all();
+        }
+    }
 }
 
 
@@ -261,10 +272,9 @@ void ServerImpl::ProcessConnection(int client_socket){
 
     {
         std::unique_lock<std::mutex> __lock(mutex);
-        auto it = std::remove(_client_sockets.begin(), _client_sockets.end(), client_socket);
-        _client_sockets.erase(it, _client_sockets.end());
+        _open_sockets.erase(client_socket);
 
-        if(_client_sockets.size() == 0 && !running){
+        if(_open_sockets.empty() && !running){
             join_cv.notify_all();
         }
     }

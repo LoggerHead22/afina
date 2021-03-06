@@ -7,6 +7,7 @@
 #include <memory>
 #include <condition_variable>
 #include <algorithm>
+#include <set>
 
 #include <afina/network/Server.h>
 
@@ -54,8 +55,7 @@ private:
 
     size_t _limit = 3, current_user_count = 0;
 
-    std::vector<std::thread> _working_threads;
-    std::vector<int> _client_sockets;
+    std::set<int> _open_sockets;
 
     // Server socket to accept connections on
     int _server_socket;
@@ -66,7 +66,6 @@ private:
     //mutex, cv
     std::mutex mutex;
     std::condition_variable join_cv;
-    bool join_flag = false;
 };
 
 } // namespace MTblocking
