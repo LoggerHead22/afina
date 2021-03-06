@@ -6,6 +6,8 @@
 #include <mutex>
 #include <string>
 #include <iostream>
+#include <chrono>
+#include <thread>
 
 #include <afina/Storage.h>
 
@@ -20,6 +22,7 @@ class SimpleLRU : public Afina::Storage {
 
 public:
     SimpleLRU(size_t max_size = 1024) : _max_size(max_size) {}
+    SimpleLRU(const SimpleLRU& other) : _max_size(other._max_size) {}
 
     ~SimpleLRU() {
         _lru_index.clear();
@@ -75,6 +78,8 @@ private:
     void Delete_node(lru_node& node);
     //Adds node to head(tail) of list
     void Add_node(const std::string &key, const std::string &value);
+    //Move existed node to tail
+    void PushNodeToTail(lru_node& node);
 
 };
 
