@@ -64,7 +64,7 @@ private:
     std::thread _thread;
 
     //mutex, cv
-    std::mutex join_mutex, stop_mutex;
+    std::mutex mutex;
     std::condition_variable join_cv;
     bool join_flag = false;
 };

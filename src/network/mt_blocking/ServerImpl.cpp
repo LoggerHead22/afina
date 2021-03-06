@@ -81,7 +81,7 @@ void ServerImpl::Stop() {
     running.store(false);
     shutdown(_server_socket, SHUT_RDWR);
     {
-        std::unique_lock<std::mutex> __lock(stop_mutex);
+        std::unique_lock<std::mutex> __lock(mutex);
         for(int client_socket: _client_sockets){
             shutdown(client_socket, SHUT_RD);
         }
@@ -91,10 +91,14 @@ void ServerImpl::Stop() {
 // See Server.h
 void ServerImpl::Join() {
     assert(_thread.joinable());
-    _thread.join();
-    close(_server_socket);
     {
-       std::unique_lock<std::mutex> __lock(join_mutex);
+       std::unique_lock<std::mutex> __lock(mutex);
+       if(join_flag == false){
+           _thread.join();
+           close(_server_socket);
+           join_flag = true;
+       }
+
        join_cv.wait(__lock, [this]{return this->_client_sockets.empty() && !running;});
     }
 }
@@ -136,7 +140,7 @@ void ServerImpl::OnRun() {
         }
 
         {
-            std::unique_lock<std::mutex> __lock(join_mutex);
+            std::unique_lock<std::mutex> __lock(mutex);
 
             // TODO: Start new thread and process data from/to connection
             if(_client_sockets.size() == _limit || !running){
@@ -256,7 +260,7 @@ void ServerImpl::ProcessConnection(int client_socket){
     close(client_socket);
 
     {
-        std::unique_lock<std::mutex> __lock(join_mutex);
+        std::unique_lock<std::mutex> __lock(mutex);
         auto it = std::remove(_client_sockets.begin(), _client_sockets.end(), client_socket);
         _client_sockets.erase(it, _client_sockets.end());
 
