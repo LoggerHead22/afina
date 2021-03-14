@@ -20,6 +20,7 @@
 #include <afina/Storage.h>
 #include <afina/execute/Command.h>
 #include <afina/logging/Service.h>
+#include <afina/concurrency/Executor.h>
 
 #include "protocol/Parser.h"
 
@@ -73,7 +74,14 @@ void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
     }
 
     running.store(true);
+
+    {
+        std::unique_lock<std::mutex> __lock(mutex);
+        _open_sockets.insert(_server_socket);
+    }
+
     _thread = std::thread(&ServerImpl::OnRun, this);
+    _thread.detach();
 }
 
 // See Server.h
@@ -81,8 +89,8 @@ void ServerImpl::Stop() {
     running.store(false);
     shutdown(_server_socket, SHUT_RDWR);
     {
-        std::unique_lock<std::mutex> __lock(stop_mutex);
-        for(int client_socket: _client_sockets){
+        std::unique_lock<std::mutex> __lock(mutex);
+        for(int client_socket: _open_sockets){
             shutdown(client_socket, SHUT_RD);
         }
     }
@@ -90,20 +98,21 @@ void ServerImpl::Stop() {
 
 // See Server.h
 void ServerImpl::Join() {
-    assert(_thread.joinable());
-    _thread.join();
-    close(_server_socket);
+    //assert(_thread.joinable());
     {
-       std::unique_lock<std::mutex> __lock(join_mutex);
-       join_cv.wait(__lock, [this]{return this->_client_sockets.empty() && !running;});
+       std::unique_lock<std::mutex> __lock(mutex);
+       join_cv.wait(__lock, [this]{return this->_open_sockets.empty() && !running;});
     }
 }
 
 
 // See Server.h
 void ServerImpl::OnRun() {
+    Afina::Concurrency::Executor pool("Server pool", 2, 8, 128, 3000);
+    pool.Start();
 
     while (running.load()) {
+
         _logger->debug("waiting for connection...");
 
         // The call to accept() blocks until the incoming connection arrives
@@ -136,23 +145,36 @@ void ServerImpl::OnRun() {
         }
 
         {
-            std::unique_lock<std::mutex> __lock(join_mutex);
+            std::unique_lock<std::mutex> __lock(mutex);
 
             // TODO: Start new thread and process data from/to connection
-            if(_client_sockets.size() == _limit || !running){
+            if(_open_sockets.size() == _limit || !running){
                 close(client_socket);
                 continue;
+            }
+            if(pool.Execute(&ServerImpl::ProcessConnection, this, client_socket)){
+                _open_sockets.insert(client_socket);
             }else{
-                _client_sockets.push_back(client_socket);
-                //_working_threads.push_back(std::thread(&ServerImpl::ProcessConnection, this, client_socket));
-                auto t = std::thread(&ServerImpl::ProcessConnection, this, client_socket);
-                t.detach();
+                _logger->error("Pool cant process your connection");
+                close(client_socket);
+                continue;
             }
         }
     }
 
     // Cleanup on exit...
     _logger->warn("Network stopped");
+
+    close(_server_socket);
+    pool.Stop();
+    {
+        std::unique_lock<std::mutex> __lock(mutex);
+        _open_sockets.erase(_server_socket);
+
+        if(_open_sockets.empty() && !running){
+            join_cv.notify_all();
+        }
+    }
 }
 
 
@@ -256,16 +278,14 @@ void ServerImpl::ProcessConnection(int client_socket){
     close(client_socket);
 
     {
-        std::unique_lock<std::mutex> __lock(join_mutex);
-        auto it = std::remove(_client_sockets.begin(), _client_sockets.end(), client_socket);
-        _client_sockets.erase(it, _client_sockets.end());
+        std::unique_lock<std::mutex> __lock(mutex);
+        _open_sockets.erase(client_socket);
 
-        if(_client_sockets.size() == 0 && !running){
+        if(_open_sockets.empty() && !running){
             join_cv.notify_all();
         }
     }
 }
-
 
 
 

@@ -7,8 +7,10 @@
 #include <memory>
 #include <condition_variable>
 #include <algorithm>
+#include <set>
 
 #include <afina/network/Server.h>
+
 
 namespace spdlog {
 class logger;
@@ -54,8 +56,7 @@ private:
 
     size_t _limit = 3, current_user_count = 0;
 
-    std::vector<std::thread> _working_threads;
-    std::vector<int> _client_sockets;
+    std::set<int> _open_sockets;
 
     // Server socket to accept connections on
     int _server_socket;
@@ -64,9 +65,8 @@ private:
     std::thread _thread;
 
     //mutex, cv
-    std::mutex join_mutex, stop_mutex;
+    std::mutex mutex;
     std::condition_variable join_cv;
-    bool join_flag = false;
 };
 
 } // namespace MTblocking
