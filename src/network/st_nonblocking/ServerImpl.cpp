@@ -129,7 +129,7 @@ void ServerImpl::OnRun() {
 
         for (int i = 0; i < nmod; i++) {
             struct epoll_event &current_event = mod_list[i];
-            if (current_event.data.fd == _event_fd) {
+            if (current_event.data.fd == _event_fd){
                 _logger->debug("Break acceptor due to stop signal");
                 run = false;
                 continue;
@@ -207,7 +207,7 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         }
 
         // Register the new FD to be monitored by epoll.
-        Connection *pc = new(std::nothrow) Connection(infd);
+        Connection *pc = new(std::nothrow) Connection(infd, pStorage.get());
         if (pc == nullptr) {
             throw std::runtime_error("Failed to allocate connection");
         }
