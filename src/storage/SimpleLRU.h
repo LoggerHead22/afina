@@ -9,6 +9,7 @@
 #include <chrono>
 #include <thread>
 
+
 #include <afina/Storage.h>
 
 namespace Afina {
@@ -19,17 +20,13 @@ namespace Backend {
  * That is NOT thread safe implementaiton!!
  */
 class SimpleLRU : public Afina::Storage {
-
 public:
     SimpleLRU(size_t max_size = 1024) : _max_size(max_size) {}
     SimpleLRU(const SimpleLRU& other) : _max_size(other._max_size) {}
 
     ~SimpleLRU() {
         _lru_index.clear();
-        //_lru_head.reset(); // TODO: Here is stack overflow
-        while(_lru_head.get() != nullptr){
-            Delete_node(*_lru_head.get());
-        }
+        _lru_head.reset(); // TODO: Here is stack overflow
     }
 
     // Implements Afina::Storage interface
@@ -47,29 +44,27 @@ public:
     // Implements Afina::Storage interface
     bool Get(const std::string &key, std::string &value) override;
 
-
 private:
-
     // LRU cache node
     using lru_node = struct lru_node {
-        const std::string key;
+        std::string key;
         std::string value;
-        lru_node* prev;
+        std::unique_ptr<lru_node> prev;
         std::unique_ptr<lru_node> next;
     };
 
     // Maximum number of bytes could be stored in this cache.
     // i.e all (keys+values) must be not greater than the _max_size
     std::size_t _max_size;
-    std::size_t _using_size = 0;
+
     // Main storage of lru_nodes, elements in this list ordered descending by "freshness": in the head
     // element that wasn't used for longest time.
     //
     // List owns all nodes
-    std::unique_ptr<lru_node> _lru_head= std::unique_ptr<lru_node>(nullptr);
-    lru_node* _lru_tail = nullptr;
+    std::unique_ptr<lru_node> _lru_head;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
+
     std::map<std::reference_wrapper<const std::string>, std::reference_wrapper<lru_node>, std::less<std::string>> _lru_index;
 
 private:
