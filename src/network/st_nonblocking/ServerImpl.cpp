@@ -101,6 +101,8 @@ void ServerImpl::Join() {
 
 // See ServerImpl.h
 void ServerImpl::OnRun() {
+    _logger->set_level(spdlog::level::debug);
+
     _logger->info("Start acceptor");
     int epoll_descr = epoll_create1(0);
     if (epoll_descr == -1) {
@@ -207,7 +209,7 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         }
 
         // Register the new FD to be monitored by epoll.
-        Connection *pc = new(std::nothrow) Connection(infd, pStorage.get());
+        Connection *pc = new(std::nothrow) Connection(infd, pStorage, _logger);
         if (pc == nullptr) {
             throw std::runtime_error("Failed to allocate connection");
         }

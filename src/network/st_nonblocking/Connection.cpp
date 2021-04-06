@@ -13,12 +13,14 @@ void Connection::Start() {
 
 // See Connection.h
 void Connection::OnError() {
-    std::cout << "OnError" << std::endl;
+    //std::cout << "OnError" << std::endl;
+    _isAlive_flag = false;
 }
 
 // See Connection.h
 void Connection::OnClose() {
-    std::cout << "OnClose" << std::endl;
+    _isAlive_flag = false;
+    //std::cout << "OnClose" << std::endl;
 }
 
 // See Connection.h
@@ -27,17 +29,17 @@ void Connection::DoRead() {
     try {
         readed_bytes = read(_socket, client_buffer, sizeof(client_buffer));
         if(readed_bytes > 0) {
-            //_logger->debug("Got {} bytes from socket", readed_bytes);
+            _logger->debug("Got {} bytes from socket", readed_bytes);
 
             while (readed_bytes > 0) {
-                //_logger->debug("Process {} bytes", readed_bytes);
+                _logger->debug("Process {} bytes", readed_bytes);
                 // There is no command yet
                 if (!command_to_execute) {
                     std::size_t parsed = 0;
                     if (parser.Parse(client_buffer, readed_bytes, parsed)) {
                         // There is no command to be launched, continue to parse input stream
                         // Here we are, current chunk finished some command, process it
-                        //_logger->debug("Found new command: {} in {} bytes", parser.Name(), parsed);
+                        _logger->debug("Found new command: {} in {} bytes", parser.Name(), parsed);
                         command_to_execute = parser.Build(arg_remains);
                         if (arg_remains > 0) {
                             arg_remains += 2;
@@ -56,7 +58,7 @@ void Connection::DoRead() {
 
                 // There is command, but we still wait for argument to arrive...
                 if (command_to_execute && arg_remains > 0) {
-                    //_logger->debug("Fill argument: {} bytes of {}", readed_bytes, arg_remains);
+                    _logger->debug("Fill argument: {} bytes of {}", readed_bytes, arg_remains);
                     // There is some parsed command, and now we are reading argument
                     std::size_t to_read = std::min(arg_remains, std::size_t(readed_bytes));
                     argument_for_command.append(client_buffer, to_read);
@@ -68,7 +70,7 @@ void Connection::DoRead() {
 
                 // There is command & argument - RUN!
                 if (command_to_execute && arg_remains == 0) {
-                    //_logger->debug("Start command execution");
+                    _logger->debug("Start command execution");
 
                     std::string result;
                     if (argument_for_command.size()) {
@@ -80,15 +82,18 @@ void Connection::DoRead() {
                     result += "\r\n";
 
 
+                    _logger->debug("Result is ready: {}", result);
+
                     if (output_buffer.empty()) {
                         _event.events |= EPOLLOUT;
                     }
 
-                    output_buffer.push_back(std::move(result));
+                    output_buffer.push_back(result);
                     output_iovec.emplace_back();
-                    output_iovec[output_iovec.size() -1 ].iov_base =  &output_buffer.back();
-                    output_iovec[output_iovec.size() -1 ].iov_len =  output_buffer.back().size();
+                    output_iovec[output_iovec.size()-1].iov_base =  &output_buffer.back()[0];
+                    output_iovec[output_iovec.size()-1].iov_len =  result.size();
 
+                    _logger->debug("Add to iovec {} byte string", output_buffer.back().size());
 
 
                     if (output_buffer.size() > 100) {
@@ -101,17 +106,15 @@ void Connection::DoRead() {
                     parser.Reset();
                 }
             }
-        }
-
-        if (readed_bytes == 0) {
-            //_logger->debug("Connection closed");
+        }else if (readed_bytes == 0) {
+            _logger->debug("Connection closed");
             _isAlive_flag = false;
         } else {
             throw std::runtime_error(std::string(strerror(errno)));
         }
 
     } catch (std::runtime_error &ex) {
-        //_logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
+        _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
         _isAlive_flag = false;
     }
 }
@@ -121,17 +124,19 @@ void Connection::DoRead() {
 void Connection::DoWrite() {
     int ret;
 
-    //std::array<iovec, output_buffer.size()> output_iovec;
-
     output_iovec[0].iov_base += head_offset;
     output_iovec[0].iov_len -= head_offset;
 
-    ret = writev(_socket, &output_iovec.front(), output_iovec.size());
+    ret = writev(_socket, &output_iovec[0], output_iovec.size());
+
+    _logger->debug("Writev {} bytes to socket, queue lenght {}", ret, output_iovec.size());
+
     if(ret <= 0){
         _isAlive_flag = false;
     }else{
         auto it1 = output_buffer.begin();
-        auto it2 = output_iovec.begin();
+
+        //_logger->debug("Iovec base: {}, len:  {}", *(static_cast<std::string* >((*it2).iov_base)), (*it2).iov_len);
 
         size_t front_element_size = (*it1).size() - head_offset;
 
@@ -143,7 +148,6 @@ void Connection::DoWrite() {
 
             if(!output_buffer.empty()){
                 it1 = output_buffer.begin();
-                it2 = output_iovec.begin();
 
                 front_element_size = (*it1).size();
             }else{
@@ -151,15 +155,17 @@ void Connection::DoWrite() {
             }
 
         }
-        head_offset == ret;
+        head_offset = ret;
     }
+
+    _logger->debug("After writing {} elems left in queue", output_buffer.size());
 
     if (output_buffer.size() < 90) {
         _event.events |= EPOLLIN;
     }
 
-    if (!output_buffer.empty()) {
-        _event.events |= EPOLLOUT;
+    if (output_buffer.empty()) {
+        _event.events &= ~EPOLLOUT;
     }
 }
 
