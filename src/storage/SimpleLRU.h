@@ -81,6 +81,11 @@ private:
     //Move existed node to tail
     void PushNodeToTail(lru_node& node);
 
+    //Deleting nodes from head, until req_memory is not available
+    void Delete_old_node(size_t req_memory);
+
+    bool Set_and_push_tail(lru_node& node, const std::string &value);
+
 };
 
 } // namespace Backend

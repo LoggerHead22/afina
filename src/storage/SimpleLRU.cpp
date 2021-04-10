@@ -11,15 +11,17 @@ bool SimpleLRU::Put(const std::string &key, const std::string &value) {
     if(curr_size > _max_size){//если пара не влезет
         return false;
     }
-    if(node_it != _lru_index.end()){//если ключ уже есть, удалим старый
+
+    bool result = true;
+
+    if(node_it != _lru_index.end()){//если ключ уже есть
         lru_node& node = node_it->second.get();
-        //удаляем из мапа
-        _lru_index.erase(node_it);
-        //удаляем из списка
-        Delete_node(node);
+        result = Set_and_push_tail(node, value);
+    }else{
+        Add_node(key, value);
     }
-    Add_node(key, value);
-    return true;
+
+    return result;
 }
 
 // See MapBasedGlobalLockImpl.h
@@ -34,6 +36,7 @@ bool SimpleLRU::PutIfAbsent(const std::string &key, const std::string &value) {
     if(node_it != _lru_index.end()){
         return false;
     }
+
     Add_node(key, value);
     return true;
 }
@@ -53,13 +56,7 @@ bool SimpleLRU::Set(const std::string &key, const std::string &value) {
 
     lru_node& node = node_it->second.get();
 
-    if(_using_size - node.value.size() + value.size() > _max_size){//если новое значение не влезет
-        return false;
-    }
-    node.value = value;
-    PushNodeToTail(node);
-
-    return true;
+    return Set_and_push_tail(node, value);
 }
 
 // See MapBasedGlobalLockImpl.h
@@ -77,7 +74,7 @@ bool SimpleLRU::Delete(const std::string &key) {
 }
 
 void SimpleLRU::Delete_node(lru_node& node){
-    //освободим доступную память
+    //освободим память
     _using_size -= node.key.size() + node.value.size();
     //всего 1 элемент
     if(node.next.get() == nullptr && node.prev==nullptr){
@@ -97,6 +94,32 @@ void SimpleLRU::Delete_node(lru_node& node){
     }
 }
 
+void SimpleLRU::Delete_old_node(size_t req_memory){
+    while(_using_size + req_memory > _max_size){
+        _lru_index.erase(_lru_head->key);
+        Delete_node(*_lru_head.get());
+    }
+}
+
+bool SimpleLRU::Set_and_push_tail(lru_node& node, const std::string &value){
+    int req_memory = value.size() - node.value.size();
+
+    if(_using_size + req_memory > _max_size){//если новое значение не влезет
+        return false;
+    }
+
+    if(req_memory > 0){//если новое значение больше
+        Delete_old_node(req_memory);
+    }
+
+    _using_size += req_memory;
+
+    node.value = value;
+    PushNodeToTail(node);
+    return true;
+}
+
+
 void SimpleLRU::Add_node(const std::string &key, const std::string &value){
      lru_node* new_node = new lru_node {key,
                                         value,
@@ -107,10 +130,8 @@ void SimpleLRU::Add_node(const std::string &key, const std::string &value){
 
     size_t curr_size = key.size() + value.size();
     //теперь будем удалять из головы(?), пока места не освободится
-    while(_using_size + curr_size > _max_size){
-        _lru_index.erase(_lru_head->key);
-        Delete_node(*_lru_head.get());
-    }
+
+    Delete_old_node(curr_size);
 
     if(_lru_head.get() == nullptr && _lru_tail == nullptr){
         _lru_head = std::move(temp_node);
