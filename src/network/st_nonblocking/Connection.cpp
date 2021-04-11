@@ -13,21 +13,19 @@ void Connection::Start() {
 
 // See Connection.h
 void Connection::OnError() {
-    //std::cout << "OnError" << std::endl;
     _isAlive_flag = false;
 }
 
 // See Connection.h
 void Connection::OnClose() {
     _isAlive_flag = false;
-    //std::cout << "OnClose" << std::endl;
 }
 
 // See Connection.h
 void Connection::DoRead() {
-
+    assert(_write_only==false);
     try {
-        readed_bytes = read(_socket, client_buffer, sizeof(client_buffer));
+        readed_bytes = read(_socket, &client_buffer[0] + read_offset, sizeof(client_buffer) - read_offset);
         if(readed_bytes > 0) {
             _logger->debug("Got {} bytes from socket", readed_bytes);
 
@@ -49,6 +47,7 @@ void Connection::DoRead() {
                     // Parsed might fails to consume any bytes from input stream. In real life that could happens,
                     // for example, because we are working with UTF-16 chars and only 1 byte left in stream
                     if (parsed == 0) {
+                        read_offset += readed_bytes;
                         break;
                     } else {
                         std::memmove(client_buffer, client_buffer + parsed, readed_bytes - parsed);
@@ -101,14 +100,22 @@ void Connection::DoRead() {
                     }
 
                     // Prepare for the next command
+                    read_offset = 0;
                     command_to_execute.reset();
                     argument_for_command.resize(0);
                     parser.Reset();
                 }
             }
+
         }else if (readed_bytes == 0) {
-            _logger->debug("Connection closed");
-            _isAlive_flag = false;
+            _logger->debug("Connection closed: readed_bytes = 0");
+            _event.events &= ~EPOLLIN;
+            if(output_buffer.empty()){
+                _isAlive_flag = false;
+            }else{
+                _write_only = true;
+            }
+
         } else {
             throw std::runtime_error(std::string(strerror(errno)));
         }
@@ -160,13 +167,18 @@ void Connection::DoWrite() {
 
     _logger->debug("After writing {} elems left in queue", output_buffer.size());
 
-    if (output_buffer.size() < 90) {
+    if (output_buffer.size() < 90 && !_write_only) {
         _event.events |= EPOLLIN;
     }
 
     if (output_buffer.empty()) {
         _event.events &= ~EPOLLOUT;
+        if(_write_only){
+            _isAlive_flag = false;
+        }
     }
+
+
 }
 
 } // namespace STnonblock

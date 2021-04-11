@@ -56,6 +56,8 @@ private:
     char client_buffer[4096];
 
     size_t head_offset = 0;
+    size_t read_offset = 0;
+
     std::deque<std::string> output_buffer;
     std::deque<iovec> output_iovec;
 
@@ -63,7 +65,7 @@ private:
     std::shared_ptr<Afina::Storage> pStorage;
 
     int _socket;
-    bool _isAlive_flag = true;
+    bool _isAlive_flag = true, _write_only = false;
 
     struct epoll_event _event;
 };
