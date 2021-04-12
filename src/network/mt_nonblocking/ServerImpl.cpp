@@ -37,6 +37,7 @@ ServerImpl::~ServerImpl() {}
 
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) {
+    //_logger->set_level(spdlog::level::debug);
     _logger = pLogging->select("network");
     _logger->info("Start mt_nonblocking network service");
 
@@ -63,6 +64,11 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
     if (setsockopt(_server_socket, SOL_SOCKET, (SO_KEEPALIVE), &opts, sizeof(opts)) == -1) {
         close(_server_socket);
         throw std::runtime_error("Socket setsockopt() failed: " + std::string(strerror(errno)));
+    }
+
+    if (setsockopt(_server_socket, SOL_SOCKET, SO_REUSEADDR, &opts, sizeof(opts)) == -1) {
+        close(_server_socket);
+        throw std::runtime_error("Socket setsockopt() failed");
     }
 
     if (bind(_server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
@@ -107,6 +113,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
     }
 }
 
+
 // See Server.h
 void ServerImpl::Stop() {
     _logger->warn("Stop network service");
@@ -134,6 +141,7 @@ void ServerImpl::Join() {
 
 // See ServerImpl.h
 void ServerImpl::OnRun() {
+    _logger->set_level(spdlog::level::debug);
     _logger->info("Start acceptor");
     int acceptor_epoll = epoll_create1(0);
     if (acceptor_epoll == -1) {
@@ -193,7 +201,7 @@ void ServerImpl::OnRun() {
                 }
 
                 // Register the new FD to be monitored by epoll.
-                Connection *pc = new Connection(infd);
+                Connection *pc = new Connection(infd, pStorage, _logger);
                 if (pc == nullptr) {
                     throw std::runtime_error("Failed to allocate connection");
                 }
@@ -201,6 +209,7 @@ void ServerImpl::OnRun() {
                 // Register connection in worker's epoll
                 pc->Start();
                 if (pc->isAlive()) {
+                    _logger->debug("Adding {} socket", pc->_socket);
                     pc->_event.events |= EPOLLONESHOT;
                     int epoll_ctl_retval;
                     if ((epoll_ctl_retval = epoll_ctl(_data_epoll_fd, EPOLL_CTL_ADD, pc->_socket, &pc->_event))) {
