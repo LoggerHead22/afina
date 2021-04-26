@@ -6,6 +6,7 @@
 #include <iostream>
 #include <map>
 #include <tuple>
+#include <cstring>
 
 #include <setjmp.h>
 
@@ -25,8 +26,8 @@ private:
      * A single coroutine instance which could be scheduled for execution
      * should be allocated on heap
      */
-    struct context;
-    typedef struct context {
+    struct context{
+    //typedef struct context {
         // coroutine stack start address
         char *Low = nullptr;
 
@@ -42,7 +43,7 @@ private:
         // To include routine in the different lists, such as "alive", "blocked", e.t.c
         struct context *prev = nullptr;
         struct context *next = nullptr;
-    } context;
+    }; //context;
 
     /**
      * Where coroutines stack begins
@@ -126,6 +127,15 @@ public:
     void unblock(void *coro);
 
     /**
+     * Delete coro from src list and add it to dst list
+     * @param coro - pointer to context
+     * @param src - pointer to head of source linked list
+     * @param dst - pointer to head of destination linked list
+     */
+    void swap_list(context* coro, context* src, context* dst);
+
+
+    /**
      * Entry point into the engine. Prepare all internal mechanics and starts given function which is
      * considered as main.
      *
@@ -151,7 +161,7 @@ public:
 
             // Here: correct finish of the coroutine section
             yield();
-        } else if (pc != nullptr) {
+        }else if (pc != nullptr) {
             Store(*idle_ctx);
             sched(pc);
         }
@@ -161,11 +171,16 @@ public:
         this->StackBottom = 0;
     }
 
+    template <typename... Ta> void *run(void (*func)(Ta...), Ta &&... args) {
+        char c;
+        return _run(&c, func, std::forward<Ta>(args)...);
+    }
+
     /**
      * Register new coroutine. It won't receive control until scheduled explicitely or implicitly. In case of some
      * errors function returns -1
      */
-    template <typename... Ta> void *run(void (*func)(Ta...), Ta &&... args) {
+    template <typename... Ta> void *_run(char* stack, void (*func)(Ta...), Ta &&... args) {
         if (this->StackBottom == 0) {
             // Engine wasn't initialized yet
             return nullptr;
@@ -173,7 +188,7 @@ public:
 
         // New coroutine context that carries around all information enough to call function
         context *pc = new context();
-
+        pc->Low = stack;
         // Store current state right here, i.e just before enter new coroutine, later, once it gets scheduled
         // execution starts here. Note that we have to acquire stack of the current function call to ensure
         // that function parameters will be passed along
