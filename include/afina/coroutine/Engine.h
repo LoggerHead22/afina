@@ -154,6 +154,9 @@ public:
         void *pc = run(main, std::forward<Ta>(args)...);
 
         idle_ctx = new context();
+        idle_ctx->Low = &StackStartsHere;
+        idle_ctx->Hight = &StackStartsHere;
+
         if (setjmp(idle_ctx->Environment) > 0) {
             if (alive == nullptr) {
                 _unblocker(*this);
@@ -163,6 +166,7 @@ public:
             yield();
         }else if (pc != nullptr) {
             Store(*idle_ctx);
+            cur_routine = idle_ctx;
             sched(pc);
         }
 
@@ -189,6 +193,9 @@ public:
         // New coroutine context that carries around all information enough to call function
         context *pc = new context();
         pc->Low = stack;
+        pc->Hight = stack;
+
+        //std::cout<<"Stack after: "<<stack;
         // Store current state right here, i.e just before enter new coroutine, later, once it gets scheduled
         // execution starts here. Note that we have to acquire stack of the current function call to ensure
         // that function parameters will be passed along
@@ -203,6 +210,8 @@ public:
             // to pass control after that. We never want to go backward by stack as that would mean to go backward in
             // time. Function run() has already return once (when setjmp returns 0), so return second return from run
             // would looks a bit awkward
+
+            //std::cout<<"Exiting "<<cur_routine<<std::endl;
             if (pc->prev != nullptr) {
                 pc->prev->next = pc->next;
             }
@@ -230,7 +239,9 @@ public:
         // setjmp remembers position from which routine could starts execution, but to make it correctly
         // it is neccessary to save arguments, pointer to body function, pointer to context, e.t.c - i.e
         // save stack.
+        //std::cout<<"Before Store: "<<std::endl;
         Store(*pc);
+        //std::cout<<"After Store: "<<std::endl;
 
         // Add routine as alive double-linked list
         pc->next = alive;

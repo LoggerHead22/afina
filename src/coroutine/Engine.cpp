@@ -8,31 +8,43 @@ namespace Afina {
 namespace Coroutine {
 
 void Engine::Store(context &ctx) {
-    char c;
-    ctx.Hight = &c;
+    char c_s;
+    ctx.Hight = &c_s;
+    std::size_t stack_size;
 
-    std::size_t stack_size = ctx.Hight - ctx.Low;
-    if(std::get<1>(ctx.Stack) < stack_size || 2 * std::get<1>(ctx.Stack) >= stack_size){
+    if(ctx.Low > ctx.Hight){
+        std::swap(ctx.Low, ctx.Hight);
+    }
+    stack_size = ctx.Hight - ctx.Low;
+
+    //std::cout<<"Count of bytes: "<<stack_size<<&c_s<<" "<<ctx.Low<<std::endl;
+    if(std::get<1>(ctx.Stack) < stack_size || std::get<1>(ctx.Stack) >= 2 * stack_size){
         delete[] std::get<0>(ctx.Stack);
         std::get<1>(ctx.Stack) = stack_size;
         std::get<0>(ctx.Stack) = new char[stack_size];
     }
-
-    std::memcpy(ctx.Low, std::get<0>(ctx.Stack), stack_size);
+    std::memcpy(std::get<0>(ctx.Stack), ctx.Low, stack_size);
 }
 
 void Engine::Restore(context &ctx) {
     char c;
+    if(ctx.Low > ctx.Hight){
+        std::swap(ctx.Low, ctx.Hight);
+    }
+
     if(&c >= ctx.Low && &c <= ctx.Hight){
         Restore(ctx);
     }
-    std::memcpy(std::get<0>(ctx.Stack), ctx.Low, ctx.Hight - ctx.Low);
+    cur_routine = &ctx;
+
+    std::memcpy(ctx.Low, std::get<0>(ctx.Stack), ctx.Hight - ctx.Low);
     longjmp(ctx.Environment, 1);
 }
 
 void Engine::yield() {
     //there is no more active coroutine other than the current one
-    if(!(alive == cur_routine && cur_routine->next == nullptr)){
+    //or there is no active coroutine
+    if((alive == cur_routine && cur_routine->next == nullptr) || alive ==nullptr){
         return;
     }
 
@@ -48,19 +60,22 @@ void Engine::yield() {
 }
 
 void Engine::sched(void  *routine_) {
+    //std::cout<<"Sched: "<<routine_<<" "<<cur_routine<<std::endl;
     if(routine_ == nullptr){
         yield();
     }else{
-        context *coroutine = (context*)routine_;
-        //context *coroutine = routine_;
+        context *coroutine = static_cast<context*>(routine_);
+
         if(coroutine == cur_routine){
             return;
         }
 
         if(setjmp(cur_routine->Environment) <= 0){
+            //std::cout<<cur_routine<<" wake up "<<routine_<<std::endl;
             Store(*cur_routine);
             Restore(*coroutine);
         }
+        //std::cout<<cur_routine<<" is waking up "<<std::endl;
     }
 }
 
@@ -69,7 +84,7 @@ void Engine::block(void *coro){
     if(coro == nullptr){
         coroutine = cur_routine;
     }else{
-        coroutine = (context*)coro;
+        coroutine = static_cast<context*>(coro);
     }
 
     swap_list(coroutine, alive, blocked);
@@ -79,7 +94,7 @@ void Engine::block(void *coro){
 }
 
 void Engine::unblock(void *coro){
-    context* coroutine = (context*)coro;
+    context* coroutine = static_cast<context*>(coro);
     swap_list(coroutine, blocked, alive);
 }
 
