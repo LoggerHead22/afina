@@ -6,6 +6,7 @@
 #include <iostream>
 #include <map>
 #include <tuple>
+#include <cstring>
 
 #include <setjmp.h>
 
@@ -25,8 +26,8 @@ private:
      * A single coroutine instance which could be scheduled for execution
      * should be allocated on heap
      */
-    struct context;
-    typedef struct context {
+    struct context{
+    //typedef struct context {
         // coroutine stack start address
         char *Low = nullptr;
 
@@ -42,7 +43,10 @@ private:
         // To include routine in the different lists, such as "alive", "blocked", e.t.c
         struct context *prev = nullptr;
         struct context *next = nullptr;
-    } context;
+
+    }; //context;
+
+    bool stack_grow_down = true;
 
     /**
      * Where coroutines stack begins
@@ -126,6 +130,25 @@ public:
     void unblock(void *coro);
 
     /**
+     * Delete coro from src list and add it to dst list
+     * @param coro - pointer to context
+     * @param src - pointer to head of source linked list
+     * @param dst - pointer to head of destination linked list
+     */
+    void swap_list(context* coro, context* src, context* dst);
+
+    void check_stack(){
+        char c_s;
+        if(idle_ctx->Low == idle_ctx->Hight){
+            if(&c_s <= idle_ctx->Low){
+                stack_grow_down = false;
+            }else if(&c_s >= idle_ctx->Hight){
+                stack_grow_down = true;
+            }
+        }
+    }
+
+    /**
      * Entry point into the engine. Prepare all internal mechanics and starts given function which is
      * considered as main.
      *
@@ -140,10 +163,14 @@ public:
         char StackStartsHere;
         this->StackBottom = &StackStartsHere;
 
+        idle_ctx = new context();
+        idle_ctx->Low = &StackStartsHere;
+        idle_ctx->Hight = &StackStartsHere;
+        check_stack();
+
         // Start routine execution
         void *pc = run(main, std::forward<Ta>(args)...);
 
-        idle_ctx = new context();
         if (setjmp(idle_ctx->Environment) > 0) {
             if (alive == nullptr) {
                 _unblocker(*this);
@@ -151,8 +178,9 @@ public:
 
             // Here: correct finish of the coroutine section
             yield();
-        } else if (pc != nullptr) {
+        }else if (pc != nullptr) {
             Store(*idle_ctx);
+            cur_routine = idle_ctx;
             sched(pc);
         }
 
@@ -161,11 +189,16 @@ public:
         this->StackBottom = 0;
     }
 
+    template <typename... Ta> void *run(void (*func)(Ta...), Ta &&... args) {
+        char c;
+        return _run(&c, func, std::forward<Ta>(args)...);
+    }
+
     /**
      * Register new coroutine. It won't receive control until scheduled explicitely or implicitly. In case of some
      * errors function returns -1
      */
-    template <typename... Ta> void *run(void (*func)(Ta...), Ta &&... args) {
+    template <typename... Ta> void *_run(char* stack, void (*func)(Ta...), Ta &&... args) {
         if (this->StackBottom == 0) {
             // Engine wasn't initialized yet
             return nullptr;
@@ -173,7 +206,10 @@ public:
 
         // New coroutine context that carries around all information enough to call function
         context *pc = new context();
+        pc->Low = stack;
+        pc->Hight = stack;
 
+        //std::cout<<"Stack after: "<<stack;
         // Store current state right here, i.e just before enter new coroutine, later, once it gets scheduled
         // execution starts here. Note that we have to acquire stack of the current function call to ensure
         // that function parameters will be passed along
@@ -188,6 +224,7 @@ public:
             // to pass control after that. We never want to go backward by stack as that would mean to go backward in
             // time. Function run() has already return once (when setjmp returns 0), so return second return from run
             // would looks a bit awkward
+
             if (pc->prev != nullptr) {
                 pc->prev->next = pc->next;
             }
@@ -215,7 +252,9 @@ public:
         // setjmp remembers position from which routine could starts execution, but to make it correctly
         // it is neccessary to save arguments, pointer to body function, pointer to context, e.t.c - i.e
         // save stack.
+        //std::cout<<"Before Store: "<<std::endl;
         Store(*pc);
+        //std::cout<<"After Store: "<<std::endl;
 
         // Add routine as alive double-linked list
         pc->next = alive;
