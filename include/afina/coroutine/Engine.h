@@ -43,7 +43,10 @@ private:
         // To include routine in the different lists, such as "alive", "blocked", e.t.c
         struct context *prev = nullptr;
         struct context *next = nullptr;
+
     }; //context;
+
+    bool stack_grow_down = true;
 
     /**
      * Where coroutines stack begins
@@ -211,7 +214,6 @@ public:
             // time. Function run() has already return once (when setjmp returns 0), so return second return from run
             // would looks a bit awkward
 
-            //std::cout<<"Exiting "<<cur_routine<<std::endl;
             if (pc->prev != nullptr) {
                 pc->prev->next = pc->next;
             }

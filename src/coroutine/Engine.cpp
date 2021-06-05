@@ -9,15 +9,25 @@ namespace Coroutine {
 
 void Engine::Store(context &ctx) {
     char c_s;
-    ctx.Hight = &c_s;
+    //ctx.Low = &c_s;
     std::size_t stack_size;
 
-    if(ctx.Low > ctx.Hight){
-        std::swap(ctx.Low, ctx.Hight);
+    if(ctx.Low == ctx.Hight){ //только для первого входа корутины
+        if(&c_s <= ctx.Low){
+            stack_grow_down = false;
+        }else if(&c_s >= ctx.Hight){
+            stack_grow_down = true;
+        }
     }
+
+    if(!stack_grow_down){
+        ctx.Low = &c_s; //grow up -> update low
+    }else{
+        ctx.Hight = &c_s; //grow down -> update hight
+    }
+
     stack_size = ctx.Hight - ctx.Low;
 
-    //std::cout<<"Count of bytes: "<<stack_size<<&c_s<<" "<<ctx.Low<<std::endl;
     if(std::get<1>(ctx.Stack) < stack_size || std::get<1>(ctx.Stack) >= 2 * stack_size){
         delete[] std::get<0>(ctx.Stack);
         std::get<1>(ctx.Stack) = stack_size;
@@ -28,15 +38,11 @@ void Engine::Store(context &ctx) {
 
 void Engine::Restore(context &ctx) {
     char c;
-    if(ctx.Low > ctx.Hight){
-        std::swap(ctx.Low, ctx.Hight);
-    }
 
     if(&c >= ctx.Low && &c <= ctx.Hight){
         Restore(ctx);
     }
     cur_routine = &ctx;
-
     std::memcpy(ctx.Low, std::get<0>(ctx.Stack), ctx.Hight - ctx.Low);
     longjmp(ctx.Environment, 1);
 }
@@ -48,19 +54,21 @@ void Engine::yield() {
         return;
     }
 
-    if(setjmp(cur_routine->Environment) <= 0){
-        Store(*cur_routine);
-        context* new_coro = alive;
-
-        if(cur_routine == alive){
-            new_coro = alive->next;
-        }
-        Restore(*new_coro);
+    context* new_coro = alive;
+    if(cur_routine == alive){
+        new_coro = alive->next;
     }
+    if(cur_routine != idle_ctx){
+        if(setjmp(cur_routine->Environment) > 0){
+            return;
+        }
+        Store(*cur_routine);
+    }
+    Restore(*new_coro);
 }
 
 void Engine::sched(void  *routine_) {
-    //std::cout<<"Sched: "<<routine_<<" "<<cur_routine<<std::endl;
+
     if(routine_ == nullptr){
         yield();
     }else{
@@ -70,12 +78,13 @@ void Engine::sched(void  *routine_) {
             return;
         }
 
-        if(setjmp(cur_routine->Environment) <= 0){
-            //std::cout<<cur_routine<<" wake up "<<routine_<<std::endl;
+        if(cur_routine != idle_ctx){
+            if(setjmp(cur_routine->Environment) > 0){
+                return;
+            }
             Store(*cur_routine);
-            Restore(*coroutine);
         }
-        //std::cout<<cur_routine<<" is waking up "<<std::endl;
+        Restore(*coroutine);
     }
 }
 
