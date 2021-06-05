@@ -12,14 +12,6 @@ void Engine::Store(context &ctx) {
     //ctx.Low = &c_s;
     std::size_t stack_size;
 
-    if(ctx.Low == ctx.Hight){ //только для первого входа корутины
-        if(&c_s <= ctx.Low){
-            stack_grow_down = false;
-        }else if(&c_s >= ctx.Hight){
-            stack_grow_down = true;
-        }
-    }
-
     if(!stack_grow_down){
         ctx.Low = &c_s; //grow up -> update low
     }else{

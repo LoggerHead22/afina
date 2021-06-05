@@ -137,6 +137,16 @@ public:
      */
     void swap_list(context* coro, context* src, context* dst);
 
+    void check_stack(){
+        char c_s;
+        if(idle_ctx->Low == idle_ctx->Hight){
+            if(&c_s <= idle_ctx->Low){
+                stack_grow_down = false;
+            }else if(&c_s >= idle_ctx->Hight){
+                stack_grow_down = true;
+            }
+        }
+    }
 
     /**
      * Entry point into the engine. Prepare all internal mechanics and starts given function which is
@@ -153,12 +163,13 @@ public:
         char StackStartsHere;
         this->StackBottom = &StackStartsHere;
 
-        // Start routine execution
-        void *pc = run(main, std::forward<Ta>(args)...);
-
         idle_ctx = new context();
         idle_ctx->Low = &StackStartsHere;
         idle_ctx->Hight = &StackStartsHere;
+        check_stack();
+
+        // Start routine execution
+        void *pc = run(main, std::forward<Ta>(args)...);
 
         if (setjmp(idle_ctx->Environment) > 0) {
             if (alive == nullptr) {
